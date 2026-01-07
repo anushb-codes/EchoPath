@@ -33,7 +33,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     // --- CONFIGURATION ---
     private static final String SERVER_URL = "http://10.0.2.2:5000/navigate";
-    private static final String AZURE_SPEECH_KEY = "7OsxmGUDzWUN4S7bl0luHskbRSfm3O1VFZpQY2LRoqwtcinDODOGJQQJ99CAAC3pKaRXJ3w3AAAYACOGRSOV";
+    private static final String AZURE_SPEECH_KEY = "key";
     private static final String AZURE_SPEECH_REGION = "eastasia";
 
     // --- UI ---
