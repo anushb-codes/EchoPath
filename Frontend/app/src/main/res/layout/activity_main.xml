@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center_horizontal"
+    android:background="#FAFAFA">
+
+    <TextView
+        android:id="@+id/txtStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Select a Map"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:textColor="#333333"
+        android:layout_marginBottom="40dp"/>
+
+    <Button
+        android:id="@+id/btnMap1"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="Map 1: Library"
+        android:textSize="18sp"
+        android:backgroundTint="#2196F3"/>
+
+    <Button
+        android:id="@+id/btnMap2"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="Map 2: Computer Dept"
+        android:textSize="18sp"
+        android:backgroundTint="#2196F3"
+        android:layout_marginTop="15dp"/>
+
+    <Button
+        android:id="@+id/btnMap3"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="Map 3: Canteen"
+        android:textSize="18sp"
+        android:backgroundTint="#2196F3"
+        android:layout_marginTop="15dp"/>
+
+    <View android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Tap and Speak"
+        android:textSize="16sp"
+        android:layout_marginBottom="8dp"/>
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/btnMic"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:src="@android:drawable/ic_btn_speak_now"
+        app:backgroundTint="#D32F2F"
+        app:fabSize="normal"
+        android:contentDescription="Mic" />
+
+    <TextView
+        android:id="@+id/txtInstruction"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="..."
+        android:textSize="20sp"
+        android:textStyle="italic"
+        android:textAlignment="center"
+        android:layout_marginTop="30dp"
+        android:layout_marginBottom="20dp"
+        android:textColor="#000000"/>
+
+</LinearLayout>

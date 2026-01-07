@@ -1,0 +1,4 @@
+flask
+openai
+gunicorn
+azure-cognitiveservices-speech
