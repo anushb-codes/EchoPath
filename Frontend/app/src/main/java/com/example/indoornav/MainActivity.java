@@ -1,114 +1,137 @@
 package com.example.indoornav;
 
 import android.content.Context;
-import android.content.Intent;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Bundle;
-import android.speech.RecognizerIntent;
 import android.speech.tts.TextToSpeech;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
-import androidx.annotation.Nullable;
+
 import androidx.appcompat.app.AppCompatActivity;
+
 import com.android.volley.DefaultRetryPolicy;
 import com.android.volley.Request;
 import com.android.volley.toolbox.JsonObjectRequest;
 import com.android.volley.toolbox.Volley;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.Locale;
+
+import com.microsoft.cognitiveservices.speech.*;
+import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
     // --- CONFIGURATION ---
-    // ✅ NEW URL provided by you
-    String SERVER_URL = "https://formable-eryn-unsystematised.ngrok-free.dev/navigate";
+    private static final String SERVER_URL = "http://10.0.2.2:5000/navigate";
+    private static final String AZURE_SPEECH_KEY = "7OsxmGUDzWUN4S7bl0luHskbRSfm3O1VFZpQY2LRoqwtcinDODOGJQQJ99CAAC3pKaRXJ3w3AAAYACOGRSOV";
+    private static final String AZURE_SPEECH_REGION = "eastasia";
 
-    // UI
+    // --- UI ---
     private TextView txtStatus, txtInstruction;
     private Button btnMap1, btnMap2, btnMap3;
     private FloatingActionButton btnMic;
 
-    // AI & Logic
+    // --- TTS ---
     private TextToSpeech textToSpeech;
+
+    // --- Navigation Variables ---
     private String currentMapId = "1";
     private String currentNode = "Entrance";
-
-    // NAVIGATION VARIABLES
     private ArrayList<String> currentPath = new ArrayList<>();
     private int pathIndex = 0;
     private boolean isNavigating = false;
 
-    // SENSOR VARIABLES (Friend's Logic)
+    // --- Sensor Variables ---
     private SensorManager sensorManager;
     private Sensor accelerometer;
     private int stepCount = 0;
-    private static final int STEPS_PER_NODE = 5;
-
-    // ✅ FRIEND'S LOGIC VARIABLE: Just track the last Z value
-    private float lastZ = 0;
+    private double magnitudePrevious = 0;
+    private static final int STEPS_PER_NODE = 5; // Steps needed to reach next node
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // UI Setup
+        // --- UI Setup ---
         txtStatus = findViewById(R.id.txtStatus);
         txtInstruction = findViewById(R.id.txtInstruction);
-
         btnMap1 = findViewById(R.id.btnMap1);
         btnMap2 = findViewById(R.id.btnMap2);
         btnMap3 = findViewById(R.id.btnMap3);
         btnMic = findViewById(R.id.btnMic);
 
-        // Sensor Setup
+        // --- Sensor Setup ---
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 
-        // TTS Setup
+        // --- TTS Setup ---
         textToSpeech = new TextToSpeech(this, status -> textToSpeech.setLanguage(Locale.US));
 
-        // Listeners
+        // --- Map Button Listeners ---
         btnMap1.setOnClickListener(v -> setMap("1", "Library Floor"));
         btnMap2.setOnClickListener(v -> setMap("2", "Computer Dept"));
         btnMap3.setOnClickListener(v -> setMap("3", "Canteen Area"));
-        btnMic.setOnClickListener(v -> startVoiceInput());
+
+        // --- Mic Button Listener (Azure STT) ---
+        btnMic.setOnClickListener(v -> startAzureVoiceInput());
     }
 
     private void setMap(String id, String name) {
         currentMapId = id;
         currentNode = "Entrance";
         txtStatus.setText("Map: " + name);
-        isNavigating = false;
+        isNavigating = false; // Reset navigation
     }
 
-    private void startVoiceInput() {
-        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Where to?");
-        startActivityForResult(intent, 100);
+    // --- AZURE SPEECH TO TEXT ---
+    private void startAzureVoiceInput() {
+        txtInstruction.setText("Listening...");
+
+        new Thread(() -> {
+            try {
+                SpeechConfig speechConfig = SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
+                speechConfig.setSpeechRecognitionLanguage("en-US");
+
+                AudioConfig audioConfig = AudioConfig.fromDefaultMicrophoneInput();
+                SpeechRecognizer recognizer = new SpeechRecognizer(speechConfig, audioConfig);
+
+                // Recognize speech once
+                SpeechRecognitionResult result = recognizer.recognizeOnceAsync().get();
+
+                if (result.getReason() == ResultReason.RecognizedSpeech) {
+                    String spokenText = result.getText();
+                    runOnUiThread(() -> {
+                        txtInstruction.setText("You said: " + spokenText);
+                        sendToServer(spokenText);
+                    });
+                } else {
+                    runOnUiThread(() -> txtInstruction.setText("Could not recognize speech."));
+                }
+
+                recognizer.close();
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                runOnUiThread(() -> txtInstruction.setText("Error in Azure STT"));
+            }
+        }).start();
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == 100 && resultCode == RESULT_OK && data != null) {
-            String spokenText = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS).get(0);
-            txtInstruction.setText("You said: " + spokenText);
-            sendToServer(spokenText);
-        }
-    }
-
+    // --- SEND VOICE INPUT TO SERVER ---
     private void sendToServer(String voiceText) {
         txtInstruction.setText("Calculating Route...");
+
         JSONObject jsonBody = new JSONObject();
         try {
             jsonBody.put("map_id", currentMapId);
@@ -122,14 +145,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                         String speech = response.getString("speech");
                         JSONArray pathArray = response.getJSONArray("path");
 
+                        // Parse Path
                         currentPath.clear();
                         for(int i=0; i<pathArray.length(); i++) {
                             currentPath.add(pathArray.getString(i));
                         }
 
-                        if (currentPath.size() > 1) {
-                            startNavigation();
-                        }
+                        if (currentPath.size() > 1) startNavigation();
 
                         txtInstruction.setText(speech);
                         textToSpeech.speak(speech, TextToSpeech.QUEUE_FLUSH, null, null);
@@ -138,10 +160,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                         txtInstruction.setText("Error: No path found");
                     }
                 },
-                error -> {
-                    error.printStackTrace();
-                    txtInstruction.setText("Server Error (Check Internet)");
-                }
+                error -> txtInstruction.setText("Server Error")
         );
 
         request.setRetryPolicy(new DefaultRetryPolicy(
@@ -160,32 +179,30 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         if (accelerometer != null) {
             sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
-            Toast.makeText(this, "Start Walking!", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Start Walking! Counting Steps...", Toast.LENGTH_LONG).show();
         }
     }
 
     @Override
     public void onSensorChanged(SensorEvent event) {
         if (isNavigating && event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-
-            // ✅ FRIEND'S LOGIC (Extracted from SensorController.java)
-            // It is much simpler: Just check Z-Axis changes.
+            float x = event.values[0];
+            float y = event.values[1];
             float z = event.values[2];
+            double magnitude = Math.sqrt(x*x + y*y + z*z);
+            double delta = magnitude - magnitudePrevious;
+            magnitudePrevious = magnitude;
 
-            // Check if the change in Z is greater than 3 (Simple Threshold)
-            if (Math.abs(z - lastZ) > 3) {
+            // Simple step detection
+            if (delta > 2) {
                 stepCount++;
-
-                // Update UI
                 txtInstruction.setText("Steps: " + stepCount + " / " + STEPS_PER_NODE);
 
-                // Check Navigation
                 if (stepCount >= STEPS_PER_NODE) {
                     advanceToNextNode();
                     stepCount = 0;
                 }
             }
-            lastZ = z; // Update for next loop
         }
     }
 
@@ -193,12 +210,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         pathIndex++;
 
         if (pathIndex < currentPath.size()) {
-            String nextNode = currentPath.get(pathIndex);
-            currentNode = nextNode;
-
-            String message = "Arrived at " + nextNode + ". Keep walking.";
+            currentNode = currentPath.get(pathIndex);
+            String message = "Arrived at " + currentNode + ". Keep walking.";
             if (pathIndex == currentPath.size() - 1) {
-                message = "You have arrived at " + nextNode;
+                message = "You have arrived at " + currentNode;
                 isNavigating = false;
                 sensorManager.unregisterListener(this);
             }
@@ -209,7 +224,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+    public void onAccuracyChanged(Sensor sensor, int accuracy) { }
 
     @Override
     protected void onPause() {
