@@ -17,6 +17,8 @@ import com.android.volley.Request;
 import com.android.volley.toolbox.JsonObjectRequest;
 import com.android.volley.toolbox.Volley;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.microsoft.cognitiveservices.speech.*;
+import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -25,240 +27,235 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Locale;
 
-import com.microsoft.cognitiveservices.speech.*;
-import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
-
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
-    // --- CONFIGURATION ---
+    // ================= CONFIG =================
     private static final String SERVER_URL = "http://10.0.2.2:5000/navigate";
     private static final String AZURE_SPEECH_KEY = "7OsxmGUDzWUN4S7bl0luHskbRSfm3O1VFZpQY2LRoqwtcinDODOGJQQJ99CAAC3pKaRXJ3w3AAAYACOGRSOV";
     private static final String AZURE_SPEECH_REGION = "eastasia";
 
-    // --- UI ---
-    private TextView txtStatus, txtInstruction;
+    // ================= UI =================
+    private TextView txtInstruction;
     private FloatingActionButton btnMic;
 
-    // --- TTS ---
-    private TextToSpeech textToSpeech;
+    // ================= TTS =================
+    private TextToSpeech tts;
 
-    // --- Navigation Variables ---
-    private String currentMapId = "1";
+    // ================= NAVIGATION =================
     private String currentNode = "Entrance";
-    private ArrayList<String> currentPath = new ArrayList<>();
+    private final ArrayList<DirectionSegment> directionSegments = new ArrayList<>();
+
     private int pathIndex = 0;
+    private int stepCount = 0;
+    private int currentSegmentTargetSteps = 0;
     private boolean isNavigating = false;
 
-    // --- Step/Direction Variables ---
+    // ================= SENSORS =================
     private SensorManager sensorManager;
     private Sensor accelerometer;
-    private int stepCount = 0;
     private double magnitudePrevious = 0;
 
-    // Server-provided steps & directions
-    private JSONArray rawDirections = new JSONArray();
-    private int currentNodeStepTarget = 5; // Default fallback
+    //JSON Data
+    String destination;
 
+    // ================= LIFECYCLE =================
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // --- UI Setup ---
-        txtStatus = findViewById(R.id.txtStatus);
         txtInstruction = findViewById(R.id.txtInstruction);
         btnMic = findViewById(R.id.btnMic);
 
-        // --- Sensor Setup ---
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 
-        // --- TTS Setup ---
-        textToSpeech = new TextToSpeech(this, status -> textToSpeech.setLanguage(Locale.US));
+        tts = new TextToSpeech(this, status -> tts.setLanguage(Locale.US));
 
-        // --- Mic Button Listener ---
-        btnMic.setOnClickListener(v -> startAzureVoiceInput());
-
-        // Initialize map
-        setMap("1", "Library Floor");
+        btnMic.setOnClickListener(v -> {
+            startAzureVoiceInput();
+            tts.speak("How may I help you?", TextToSpeech.QUEUE_FLUSH, null, null);
+        });
     }
 
-    private void setMap(String id, String name) {
-        currentMapId = id;
-        currentNode = "Entrance";
-        currentPath.clear();
-        pathIndex = 0;
-        isNavigating = false;
-        rawDirections = new JSONArray();
-        txtStatus.setText("Map: " + name);
-        txtInstruction.setText("Ready to navigate.");
-    }
-
-    // --- AZURE SPEECH TO TEXT ---
+    // ================= AZURE STT =================
     private void startAzureVoiceInput() {
         txtInstruction.setText("Listening...");
+
         new Thread(() -> {
             try {
-                SpeechConfig speechConfig = SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
-                speechConfig.setSpeechRecognitionLanguage("en-US");
+                SpeechConfig config = SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
+                config.setSpeechRecognitionLanguage("en-US");
 
-                AudioConfig audioConfig = AudioConfig.fromDefaultMicrophoneInput();
-                SpeechRecognizer recognizer = new SpeechRecognizer(speechConfig, audioConfig);
+                SpeechRecognizer recognizer =
+                        new SpeechRecognizer(config, AudioConfig.fromDefaultMicrophoneInput());
 
-                // Recognize speech once
                 SpeechRecognitionResult result = recognizer.recognizeOnceAsync().get();
+                recognizer.close();
 
                 if (result.getReason() == ResultReason.RecognizedSpeech) {
-                    String spokenText = result.getText();
-                    runOnUiThread(() -> txtInstruction.setText("You said: " + spokenText));
-                    sendToServer(spokenText);
+                    runOnUiThread(() -> sendToServer(result.getText()));
                 } else {
-                    runOnUiThread(() -> txtInstruction.setText("Could not recognize speech."));
+                    runOnUiThread(() -> txtInstruction.setText("Could not understand"));
                 }
 
-                recognizer.close();
             } catch (Exception e) {
                 e.printStackTrace();
-                runOnUiThread(() -> txtInstruction.setText("Error in Azure STT"));
             }
         }).start();
     }
 
-    // --- SEND VOICE INPUT TO SERVER ---
+    // ================= SERVER =================
     private void sendToServer(String voiceText) {
         txtInstruction.setText("Calculating route...");
 
-        JSONObject jsonBody = new JSONObject();
+        JSONObject body = new JSONObject();
         try {
-            jsonBody.put("map_id", currentMapId);
-            jsonBody.put("current_node", currentNode);
-            jsonBody.put("voice_text", voiceText);
-        } catch (JSONException e) { e.printStackTrace(); }
+            body.put("voice_text", voiceText);
+            body.put("current_node", currentNode);
+        } catch (JSONException ignored) {}
 
-        JsonObjectRequest request = new JsonObjectRequest(Request.Method.POST, SERVER_URL, jsonBody,
-                response -> {
-                    try {
-                        String speech = response.getString("speech");
-                        JSONArray pathArray = response.getJSONArray("path");
-                        rawDirections = response.optJSONArray("raw_directions");
-
-                        // Parse path
-                        currentPath.clear();
-                        for (int i = 0; i < pathArray.length(); i++) {
-                            currentPath.add(pathArray.getString(i));
-                        }
-
-                        if (currentPath.size() > 1) startNavigation();
-
-                        txtInstruction.setText(speech);
-                        textToSpeech.speak(speech, TextToSpeech.QUEUE_FLUSH, null, null);
-
-                    } catch (JSONException e) {
-                        txtInstruction.setText("Error: No path found");
-                    }
-                },
-                error -> txtInstruction.setText("Server Error")
+        JsonObjectRequest request = new JsonObjectRequest(
+                Request.Method.POST, SERVER_URL, body,
+                this::handleServerResponse,
+                error -> txtInstruction.setText("Server error")
         );
 
-        request.setRetryPolicy(new DefaultRetryPolicy(
-                30000,
-                DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
-                DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
-
+        request.setRetryPolicy(new DefaultRetryPolicy(30000, 1, 1));
         Volley.newRequestQueue(this).add(request);
     }
 
-    // --- NAVIGATION LOGIC ---
+    private void handleServerResponse(JSONObject response) {
+        try {
+            String speech = response.getString("speech");
+
+            directionSegments.clear();
+
+            JSONArray pathArray = response.getJSONArray("path");
+            JSONArray stepsArray = response.getJSONArray("steps_between_nodes");
+            JSONArray dirsArray = response.getJSONArray("directions_between_nodes");
+            destination = response.getString("destination");
+
+            for (int i = 0; i < stepsArray.length(); i++) {
+                String from = pathArray.getString(i);
+                String to = pathArray.getString(i + 1);
+                int steps = stepsArray.getInt(i);
+                String dir = dirsArray.getString(i);
+
+                directionSegments.add(
+                        new DirectionSegment(from, to, dir, steps)
+                );
+            }
+
+            txtInstruction.setText(speech);
+            tts.speak(speech, TextToSpeech.QUEUE_FLUSH, null, null);
+
+            if (!directionSegments.isEmpty()) {
+                startNavigation();
+            }
+
+        } catch (JSONException e) {
+            e.printStackTrace();
+            txtInstruction.setText("Error parsing navigation data");
+        }
+    }
+
+    // ================= NAVIGATION =================
     private void startNavigation() {
         isNavigating = true;
         pathIndex = 0;
         stepCount = 0;
 
-        // Set first node's step target
-        currentNodeStepTarget = getStepsForCurrentSegment();
+        loadCurrentSegment();
+        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
 
-        if (accelerometer != null) {
-            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
-            Toast.makeText(this, "Start walking! Counting steps...", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Start walking", Toast.LENGTH_SHORT).show();
+    }
+
+    private void loadCurrentSegment() {
+        if (pathIndex >= directionSegments.size()) return;
+
+        DirectionSegment seg = directionSegments.get(pathIndex);
+        currentSegmentTargetSteps = seg.steps;
+
+        String instruction = "Walk " + humanizeDirection(seg.direction)
+                + " for " + seg.steps + " steps towards " + directionSegments.get(pathIndex).to;
+
+        txtInstruction.setText(instruction);
+        tts.speak(instruction, TextToSpeech.QUEUE_FLUSH, null, null);
+    }
+
+    private String humanizeDirection(String dir) {
+        switch (dir) {
+            case "left": return "to your left";
+            case "right": return "to your right";
+            case "straight": return "straight ahead";
+            case "back": return "backwards";
+            case "upstairs": return "up the stairs";
+            case "downstairs": return "down the stairs";
+            default: return "forward";
         }
     }
 
+    // ================= SENSOR =================
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if (isNavigating && event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-            float x = event.values[0];
-            float y = event.values[1];
-            float z = event.values[2];
-            double magnitude = Math.sqrt(x*x + y*y + z*z);
-            double delta = magnitude - magnitudePrevious;
-            magnitudePrevious = magnitude;
+        if (!isNavigating) return;
 
-            // Step detection threshold
-            if (delta > 2) {
-                stepCount++;
-                txtInstruction.setText("Steps: " + stepCount + " / " + currentNodeStepTarget);
+        double mag = Math.sqrt(
+                event.values[0]*event.values[0] +
+                        event.values[1]*event.values[1] +
+                        event.values[2]*event.values[2]);
 
-                if (stepCount >= currentNodeStepTarget) {
-                    advanceToNextNode();
-                    stepCount = 0;
-                    currentNodeStepTarget = getStepsForCurrentSegment();
-                }
+        double delta = mag - magnitudePrevious;
+        magnitudePrevious = mag;
+
+        if (delta > 2) {
+            stepCount++;
+            txtInstruction.setText("Steps: " + stepCount + " / " + currentSegmentTargetSteps);
+
+            if (stepCount >= currentSegmentTargetSteps) {
+                advanceSegment();
             }
         }
     }
 
-    private int getStepsForCurrentSegment() {
-        if (rawDirections == null) return 5;
-        if (pathIndex >= rawDirections.length()) return 5;
-
-        try {
-            JSONObject segment = rawDirections.getJSONObject(pathIndex);
-            return segment.optInt("steps", 5); // Fallback to 5
-        } catch (JSONException e) {
-            return 5;
-        }
-    }
-
-    private String getDirectionForCurrentSegment() {
-        if (rawDirections == null) return "";
-        if (pathIndex >= rawDirections.length()) return "";
-
-        try {
-            JSONObject segment = rawDirections.getJSONObject(pathIndex);
-            return segment.optString("direction", "");
-        } catch (JSONException e) {
-            return "";
-        }
-    }
-
-    private void advanceToNextNode() {
+    private void advanceSegment() {
+        stepCount = 0;
         pathIndex++;
 
-        if (pathIndex < currentPath.size()) {
-            currentNode = currentPath.get(pathIndex);
+        if (pathIndex >= directionSegments.size()) {
+            isNavigating = false;
+            sensorManager.unregisterListener(this);
 
-            // Get direction for context-aware instruction
-            String direction = getDirectionForCurrentSegment();
-            String message;
-            if (pathIndex == currentPath.size() - 1) {
-                message = "You have arrived at " + currentNode + ".";
-                isNavigating = false;
-                sensorManager.unregisterListener(this);
-            } else {
-                message = "Walk " + direction + " to " + currentNode + ".";
-            }
-
-            txtInstruction.setText(message);
-            textToSpeech.speak(message, TextToSpeech.QUEUE_FLUSH, null, null);
+            String msg = "You have arrived at " + destination;
+            txtInstruction.setText(msg);
+            tts.speak(msg, TextToSpeech.QUEUE_FLUSH, null, null);
+            return;
         }
+
+        currentNode = directionSegments.get(pathIndex).from;
+        loadCurrentSegment();
     }
 
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) { }
+    @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
     @Override
     protected void onPause() {
         super.onPause();
         sensorManager.unregisterListener(this);
+    }
+
+    // ================= MODEL =================
+    static class DirectionSegment {
+        public String from, to, direction;
+        int steps;
+
+        DirectionSegment(String f, String t, String d, int s) {
+            from = f;
+            to = t;
+            direction = d;
+            steps = s;
+        }
     }
 }

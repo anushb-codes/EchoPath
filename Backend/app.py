@@ -11,7 +11,7 @@ import azure.cognitiveservices.speech as speechsdk
 app = Flask(__name__)
 
 # ❗ DO NOT HARDCODE KEYS IN REAL PROJECTS
-GITHUB_TOKEN = "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"
+GITHUB_TOKEN = "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"
 AZURE_SPEECH_KEY = "7OsxmGUDzWUN4S7bl0luHskbRSfm3O1VFZpQY2LRoqwtcinDODOGJQQJ99CAAC3pKaRXJ3w3AAAYACOGRSOV"
 AZURE_SPEECH_REGION = "eastasia"
 
@@ -21,7 +21,7 @@ client = OpenAI(
 )
 
 # =============================================================================
-# 2. MAP WITH DIRECTIONS (EDGE-BASED NAVIGATION)
+# 2. MAP WITH EDGE-BASED DIRECTIONS
 # =============================================================================
 
 maps_data = {
@@ -47,21 +47,33 @@ maps_data = {
             },
             "2nd Floor": {
                 "Stairs": {"direction": "downstairs", "steps": 25}
+            },
+            "Help Desk": {
+                "Reception": {"direction": "back", "steps": 5}
+            },
+
+            "Bookshelf A": {
+                "Reading Room": {"direction": "back", "steps": 8}
+            },
+
+            "Bookshelf B": {
+                "Reading Room": {"direction": "back", "steps": 8}
             }
+
         }
     }
 }
 
 # =============================================================================
-# 3. CORE LOGIC (SAFE & DETERMINISTIC)
+# 3. PATHFINDING (BFS)
 # =============================================================================
 
 def find_shortest_path(graph, start, end):
-    queue = [[start]]
-    visited = set()
-
     if start == end:
         return [start]
+
+    queue = [[start]]
+    visited = set()
 
     while queue:
         path = queue.pop(0)
@@ -75,36 +87,43 @@ def find_shortest_path(graph, start, end):
                 queue.append(new_path)
             visited.add(node)
 
-    return None
+    return []
 
+# =============================================================================
+# 4. DIRECTION + STEP EXTRACTION (CRITICAL FIX)
+# =============================================================================
 
 def generate_directions(path, graph):
-    steps = []
+    spoken_steps = []
+    steps_between_nodes = []
+    directions_between_nodes = []
 
     for i in range(len(path) - 1):
         curr = path[i]
         nxt = path[i + 1]
         edge = graph[curr][nxt]
 
-        direction = edge.get("direction", "").lower()
-        count = edge.get("steps", 5)  # default to 5 steps if missing
+        direction = edge.get("direction", "straight").lower()
+        steps = edge.get("steps", 5)
+
+        steps_between_nodes.append(steps)
+        directions_between_nodes.append(direction)
 
         if direction in ["left", "right", "straight"]:
-            steps.append(f"Go {direction} for {count} steps to {nxt}")
+            spoken_steps.append(f"Go {direction} for {steps} steps to {nxt}")
         elif direction == "upstairs":
-            steps.append(f"Go upstairs for {count} steps to {nxt}")
+            spoken_steps.append(f"Go upstairs for {steps} steps to {nxt}")
         elif direction == "downstairs":
-            steps.append(f"Go downstairs for {count} steps to {nxt}")
+            spoken_steps.append(f"Go downstairs for {steps} steps to {nxt}")
         elif direction in ["back", "backward"]:
-            steps.append(f"Turn back and walk {count} steps to {nxt}")
+            spoken_steps.append(f"Turn back and walk {steps} steps to {nxt}")
         else:
-            steps.append(f"Proceed {count} steps to {nxt}")
+            spoken_steps.append(f"Proceed {steps} steps to {nxt}")
 
-    return steps
-
+    return spoken_steps, steps_between_nodes, directions_between_nodes
 
 # =============================================================================
-# 4. OPENAI — HUMAN FRIENDLY CONTEXT-AWARE INSTRUCTIONS
+# 5. CONTEXT-AWARE HUMAN FRIENDLY INSTRUCTIONS
 # =============================================================================
 
 def humanize_directions(directions, destination):
@@ -112,30 +131,24 @@ def humanize_directions(directions, destination):
 You are an indoor navigation assistant.
 
 Context:
-- The user is visually impaired
-- The user is indoors
-- The user is walking while holding a phone
-- Instructions must be spoken aloud
-
-Rewrite the navigation steps below to be:
-- calm
-- reassuring
-- short spoken sentences
-- step-by-step
-- easy to follow without vision
+- User is visually impaired
+- User is indoors
+- User is walking with a phone
+- Instructions will be spoken aloud
 
 Rules:
+- Keep sentences short
+- Be calm and reassuring
 - Do NOT add or remove steps
-- Do NOT change directions or distances
-- Do NOT mention maps or screens
-- Avoid words like "see", "look", or "over there"
+- Do NOT change directions
+- Avoid words like "see" or "look"
 
 Navigation steps:
 {directions}
 
 Destination: {destination}
 
-Return a single spoken paragraph.
+Return ONE spoken paragraph.
 """
 
     try:
@@ -147,15 +160,14 @@ Return a single spoken paragraph.
             ],
             temperature=0.4
         )
-
         return response.choices[0].message.content.strip()
 
     except Exception as e:
-        print("⚠️ OpenAI failed, using fallback:", e)
+        print("⚠️ OpenAI failed, fallback used:", e)
         return ". ".join(directions)
 
 # =============================================================================
-# 5. AZURE TTS (NON-BLOCKING & SAFE)
+# 6. AZURE TTS (NON-BLOCKING)
 # =============================================================================
 
 def safe_azure_speak(text):
@@ -179,24 +191,24 @@ def safe_azure_speak(text):
     threading.Thread(target=_speak, daemon=True).start()
 
 # =============================================================================
-# 6. API ENDPOINT
+# 7. API ENDPOINT
 # =============================================================================
 
 @app.route("/navigate", methods=["POST"])
 def navigate():
     try:
-        data = request.json
+        data = request.json or {}
         voice_text = (data.get("voice_text") or "").lower()
         current_node = data.get("current_node", "Entrance")
 
         print(f"\n🎧 User said: '{voice_text}' | At: {current_node}")
 
-        map_graph = maps_data["1"]["nodes"]
-        map_nodes = list(map_graph.keys())
+        graph = maps_data["1"]["nodes"]
+        nodes = list(graph.keys())
 
-        # --- Ask AI ONLY to identify destination ---
+        # --- DESTINATION EXTRACTION (AI ONLY FOR NAME) ---
         prompt = f"""
-Map locations: {", ".join(map_nodes)}
+Map locations: {", ".join(nodes)}
 
 User said: "{voice_text}"
 
@@ -211,9 +223,9 @@ If unknown, return UNKNOWN.
         )
 
         destination = ai_res.choices[0].message.content.strip().replace(".", "")
-        print(f"📍 Destination resolved to: {destination}")
+        print(f"📍 Destination: {destination}")
 
-        if destination == "UNKNOWN" or destination not in map_nodes:
+        if destination == "UNKNOWN" or destination not in nodes:
             msg = "I couldn't find that location. Please try again."
             safe_azure_speak(msg)
             return jsonify({
@@ -222,25 +234,26 @@ If unknown, return UNKNOWN.
                 "path": []
             })
 
-        # --- Navigation logic ---
-        path = find_shortest_path(map_graph, current_node, destination)
-        raw_directions = generate_directions(path, map_graph)
-        speech_text = humanize_directions(raw_directions, destination)
+        # --- PATH + DIRECTIONS ---
+        path = find_shortest_path(graph, current_node, destination)
+        spoken_steps, steps_between_nodes, directions_between_nodes = generate_directions(path, graph)
+        speech_text = humanize_directions(spoken_steps, destination)
 
         safe_azure_speak(speech_text)
 
         response = {
             "status": "success",
             "speech": speech_text,
-            "raw_directions": raw_directions,
             "path": path,
-            "destination": destination
+            "destination": destination,
+            "steps_between_nodes": steps_between_nodes,
+            "directions_between_nodes": directions_between_nodes
         }
 
-        print(f"📤 Response: {response}")
+        print("📤 Response:", response)
         return jsonify(response)
 
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
         return jsonify({
             "status": "error",
@@ -249,9 +262,9 @@ If unknown, return UNKNOWN.
         }), 200
 
 # =============================================================================
-# 7. RUN SERVER
+# 8. RUN SERVER
 # =============================================================================
 
 if __name__ == "__main__":
-    print("🚀 Indoor Navigation Server Running on Port 5000 updated")
+    print("🚀 Indoor Navigation Server running on port 5000")
     app.run(host="0.0.0.0", port=5000)

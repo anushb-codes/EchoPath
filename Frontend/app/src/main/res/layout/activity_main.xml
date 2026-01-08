@@ -6,7 +6,7 @@
     android:orientation="vertical"
     android:padding="24dp"
     android:gravity="center_horizontal"
-    android:background="#FAFAFA">
+    android:background="#080708">
 
     <TextView
         android:id="@+id/txtStatus"
@@ -15,8 +15,9 @@
         android:text="EchoPath"
         android:textSize="50sp"
         android:textStyle="bold"
-        android:textColor="#333333"
-        android:layout_marginBottom="40dp"/>
+        android:textColor="#ffffff"
+        android:layout_marginTop="40dp"
+        android:layout_marginBottom="50dp"/>
 
 <!--    <Button-->
 <!--        android:id="@+id/btnMap1"-->
@@ -49,13 +50,13 @@
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/btnMic"
         android:layout_width="323dp"
-        android:layout_height="291dp"
+        android:layout_height="1000dp"
         android:layout_gravity="center"
         android:contentDescription="Mic"
+        android:scaleType="center"
         android:src="@android:drawable/ic_btn_speak_now"
-        app:backgroundTint="#D32F2F"
-        app:fabSize="normal"
-        android:scaleType="center" />
+        app:backgroundTint="#4b80da"
+        app:fabSize="normal" />
 
 
     <TextView
@@ -68,6 +69,6 @@
         android:textAlignment="center"
         android:layout_marginTop="30dp"
         android:layout_marginBottom="20dp"
-        android:textColor="#000000"/>
+        android:textColor="#ffffff"/>
 
 </LinearLayout>
