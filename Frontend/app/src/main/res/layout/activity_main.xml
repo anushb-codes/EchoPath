@@ -12,55 +12,51 @@
         android:id="@+id/txtStatus"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Select a Map"
-        android:textSize="28sp"
+        android:text="EchoPath"
+        android:textSize="50sp"
         android:textStyle="bold"
         android:textColor="#333333"
         android:layout_marginBottom="40dp"/>
 
-    <Button
-        android:id="@+id/btnMap1"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="Map 1: Library"
-        android:textSize="18sp"
-        android:backgroundTint="#2196F3"/>
+<!--    <Button-->
+<!--        android:id="@+id/btnMap1"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="60dp"-->
+<!--        android:text="Map 1: Library"-->
+<!--        android:textSize="18sp"-->
+<!--        android:backgroundTint="#2196F3"/>-->
 
-    <Button
-        android:id="@+id/btnMap2"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="Map 2: Computer Dept"
-        android:textSize="18sp"
-        android:backgroundTint="#2196F3"
-        android:layout_marginTop="15dp"/>
+<!--    <Button-->
+<!--        android:id="@+id/btnMap2"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="60dp"-->
+<!--        android:text="Map 2: Computer Dept"-->
+<!--        android:textSize="18sp"-->
+<!--        android:backgroundTint="#2196F3"-->
+<!--        android:layout_marginTop="15dp"/>-->
 
-    <Button
-        android:id="@+id/btnMap3"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="Map 3: Canteen"
-        android:textSize="18sp"
-        android:backgroundTint="#2196F3"
-        android:layout_marginTop="15dp"/>
+<!--    <Button-->
+<!--        android:id="@+id/btnMap3"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="60dp"-->
+<!--        android:text="Map 3: Canteen"-->
+<!--        android:textSize="18sp"-->
+<!--        android:backgroundTint="#2196F3"-->
+<!--        android:layout_marginTop="15dp"/>-->
 
-    <View android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Tap and Speak"
-        android:textSize="16sp"
-        android:layout_marginBottom="8dp"/>
+<!--    <View android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>-->
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/btnMic"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_width="323dp"
+        android:layout_height="291dp"
+        android:layout_gravity="center"
+        android:contentDescription="Mic"
         android:src="@android:drawable/ic_btn_speak_now"
         app:backgroundTint="#D32F2F"
         app:fabSize="normal"
-        android:contentDescription="Mic" />
+        android:scaleType="center" />
+
 
     <TextView
         android:id="@+id/txtInstruction"

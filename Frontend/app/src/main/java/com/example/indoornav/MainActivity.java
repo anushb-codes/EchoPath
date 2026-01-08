@@ -7,7 +7,6 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
-import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -33,12 +32,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     // --- CONFIGURATION ---
     private static final String SERVER_URL = "http://10.0.2.2:5000/navigate";
-    private static final String AZURE_SPEECH_KEY = "your_key";
-    private static final String AZURE_SPEECH_REGION = "your_region";
+    private static final String AZURE_SPEECH_KEY = "7OsxmGUDzWUN4S7bl0luHskbRSfm3O1VFZpQY2LRoqwtcinDODOGJQQJ99CAAC3pKaRXJ3w3AAAYACOGRSOV";
+    private static final String AZURE_SPEECH_REGION = "eastasia";
 
     // --- UI ---
     private TextView txtStatus, txtInstruction;
-    private Button btnMap1, btnMap2, btnMap3;
     private FloatingActionButton btnMic;
 
     // --- TTS ---
@@ -51,12 +49,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private int pathIndex = 0;
     private boolean isNavigating = false;
 
-    // --- Sensor Variables ---
+    // --- Step/Direction Variables ---
     private SensorManager sensorManager;
     private Sensor accelerometer;
     private int stepCount = 0;
     private double magnitudePrevious = 0;
-    private static final int STEPS_PER_NODE = 5; // Steps needed to reach next node
+
+    // Server-provided steps & directions
+    private JSONArray rawDirections = new JSONArray();
+    private int currentNodeStepTarget = 5; // Default fallback
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -66,9 +67,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         // --- UI Setup ---
         txtStatus = findViewById(R.id.txtStatus);
         txtInstruction = findViewById(R.id.txtInstruction);
-        btnMap1 = findViewById(R.id.btnMap1);
-        btnMap2 = findViewById(R.id.btnMap2);
-        btnMap3 = findViewById(R.id.btnMap3);
         btnMic = findViewById(R.id.btnMic);
 
         // --- Sensor Setup ---
@@ -78,26 +76,27 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         // --- TTS Setup ---
         textToSpeech = new TextToSpeech(this, status -> textToSpeech.setLanguage(Locale.US));
 
-        // --- Map Button Listeners ---
-        btnMap1.setOnClickListener(v -> setMap("1", "Library Floor"));
-        btnMap2.setOnClickListener(v -> setMap("2", "Computer Dept"));
-        btnMap3.setOnClickListener(v -> setMap("3", "Canteen Area"));
-
-        // --- Mic Button Listener (Azure STT) ---
+        // --- Mic Button Listener ---
         btnMic.setOnClickListener(v -> startAzureVoiceInput());
+
+        // Initialize map
+        setMap("1", "Library Floor");
     }
 
     private void setMap(String id, String name) {
         currentMapId = id;
         currentNode = "Entrance";
+        currentPath.clear();
+        pathIndex = 0;
+        isNavigating = false;
+        rawDirections = new JSONArray();
         txtStatus.setText("Map: " + name);
-        isNavigating = false; // Reset navigation
+        txtInstruction.setText("Ready to navigate.");
     }
 
     // --- AZURE SPEECH TO TEXT ---
     private void startAzureVoiceInput() {
         txtInstruction.setText("Listening...");
-
         new Thread(() -> {
             try {
                 SpeechConfig speechConfig = SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
@@ -111,16 +110,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
                 if (result.getReason() == ResultReason.RecognizedSpeech) {
                     String spokenText = result.getText();
-                    runOnUiThread(() -> {
-                        txtInstruction.setText("You said: " + spokenText);
-                        sendToServer(spokenText);
-                    });
+                    runOnUiThread(() -> txtInstruction.setText("You said: " + spokenText));
+                    sendToServer(spokenText);
                 } else {
                     runOnUiThread(() -> txtInstruction.setText("Could not recognize speech."));
                 }
 
                 recognizer.close();
-
             } catch (Exception e) {
                 e.printStackTrace();
                 runOnUiThread(() -> txtInstruction.setText("Error in Azure STT"));
@@ -130,7 +126,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     // --- SEND VOICE INPUT TO SERVER ---
     private void sendToServer(String voiceText) {
-        txtInstruction.setText("Calculating Route...");
+        txtInstruction.setText("Calculating route...");
 
         JSONObject jsonBody = new JSONObject();
         try {
@@ -144,10 +140,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     try {
                         String speech = response.getString("speech");
                         JSONArray pathArray = response.getJSONArray("path");
+                        rawDirections = response.optJSONArray("raw_directions");
 
-                        // Parse Path
+                        // Parse path
                         currentPath.clear();
-                        for(int i=0; i<pathArray.length(); i++) {
+                        for (int i = 0; i < pathArray.length(); i++) {
                             currentPath.add(pathArray.getString(i));
                         }
 
@@ -177,9 +174,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         pathIndex = 0;
         stepCount = 0;
 
+        // Set first node's step target
+        currentNodeStepTarget = getStepsForCurrentSegment();
+
         if (accelerometer != null) {
             sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
-            Toast.makeText(this, "Start Walking! Counting Steps...", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Start walking! Counting steps...", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -193,16 +193,41 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             double delta = magnitude - magnitudePrevious;
             magnitudePrevious = magnitude;
 
-            // Simple step detection
+            // Step detection threshold
             if (delta > 2) {
                 stepCount++;
-                txtInstruction.setText("Steps: " + stepCount + " / " + STEPS_PER_NODE);
+                txtInstruction.setText("Steps: " + stepCount + " / " + currentNodeStepTarget);
 
-                if (stepCount >= STEPS_PER_NODE) {
+                if (stepCount >= currentNodeStepTarget) {
                     advanceToNextNode();
                     stepCount = 0;
+                    currentNodeStepTarget = getStepsForCurrentSegment();
                 }
             }
+        }
+    }
+
+    private int getStepsForCurrentSegment() {
+        if (rawDirections == null) return 5;
+        if (pathIndex >= rawDirections.length()) return 5;
+
+        try {
+            JSONObject segment = rawDirections.getJSONObject(pathIndex);
+            return segment.optInt("steps", 5); // Fallback to 5
+        } catch (JSONException e) {
+            return 5;
+        }
+    }
+
+    private String getDirectionForCurrentSegment() {
+        if (rawDirections == null) return "";
+        if (pathIndex >= rawDirections.length()) return "";
+
+        try {
+            JSONObject segment = rawDirections.getJSONObject(pathIndex);
+            return segment.optString("direction", "");
+        } catch (JSONException e) {
+            return "";
         }
     }
 
@@ -211,11 +236,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         if (pathIndex < currentPath.size()) {
             currentNode = currentPath.get(pathIndex);
-            String message = "Arrived at " + currentNode + ". Keep walking.";
+
+            // Get direction for context-aware instruction
+            String direction = getDirectionForCurrentSegment();
+            String message;
             if (pathIndex == currentPath.size() - 1) {
-                message = "You have arrived at " + currentNode;
+                message = "You have arrived at " + currentNode + ".";
                 isNavigating = false;
                 sensorManager.unregisterListener(this);
+            } else {
+                message = "Walk " + direction + " to " + currentNode + ".";
             }
 
             txtInstruction.setText(message);

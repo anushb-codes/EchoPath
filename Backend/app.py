@@ -1,4 +1,3 @@
-import os
 import traceback
 import threading
 from flask import Flask, request, jsonify
@@ -6,15 +5,15 @@ from openai import OpenAI
 import azure.cognitiveservices.speech as speechsdk
 
 # =============================================================================
-# 1. SETUP & KEYS
+# 1. APP & CLIENT SETUP
 # =============================================================================
 
 app = Flask(__name__)
 
-# --- YOUR KEYS (PRE-FILLED) ---
-GITHUB_TOKEN = "YOUR_GITHUB_TOKEN" 
-AZURE_SPEECH_KEY = "YOUR_AZURE_KEY1"
-AZURE_SPEECH_REGION = "YOUR_REGION"
+# ❗ DO NOT HARDCODE KEYS IN REAL PROJECTS
+GITHUB_TOKEN = "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"
+AZURE_SPEECH_KEY = "7OsxmGUDzWUN4S7bl0luHskbRSfm3O1VFZpQY2LRoqwtcinDODOGJQQJ99CAAC3pKaRXJ3w3AAAYACOGRSOV"
+AZURE_SPEECH_REGION = "eastasia"
 
 client = OpenAI(
     base_url="https://models.github.ai/inference",
@@ -22,153 +21,237 @@ client = OpenAI(
 )
 
 # =============================================================================
-# 2. MAP DATA
+# 2. MAP WITH DIRECTIONS (EDGE-BASED NAVIGATION)
 # =============================================================================
 
 maps_data = {
     "1": {
         "nodes": {
-            "Entrance": ["Reception", "Stairs"],
-            "Reception": ["Entrance", "Reading Room", "Help Desk"],
-            "Stairs": ["Entrance", "2nd Floor"],
-            "Reading Room": ["Reception", "Bookshelf A", "Bookshelf B"],
-            "Bookshelf A": ["Reading Room"],
-            "Bookshelf B": ["Reading Room"],
-            "Help Desk": ["Reception"],
-            "2nd Floor": ["Stairs"]
+            "Entrance": {
+                "Reception": {"direction": "straight", "steps": 10},
+                "Stairs": {"direction": "right", "steps": 20}
+            },
+            "Reception": {
+                "Entrance": {"direction": "back", "steps": 10},
+                "Reading Room": {"direction": "left", "steps": 15},
+                "Help Desk": {"direction": "right", "steps": 5}
+            },
+            "Reading Room": {
+                "Reception": {"direction": "back", "steps": 15},
+                "Bookshelf A": {"direction": "left", "steps": 8},
+                "Bookshelf B": {"direction": "right", "steps": 8}
+            },
+            "Stairs": {
+                "Entrance": {"direction": "back", "steps": 20},
+                "2nd Floor": {"direction": "upstairs", "steps": 25}
+            },
+            "2nd Floor": {
+                "Stairs": {"direction": "downstairs", "steps": 25}
+            }
         }
     }
 }
 
-step_distances = {
-    "Entrance-Reception": 10,
-    "Reception-Reading Room": 15,
-    "Reception-Help Desk": 5,
-    "Entrance-Stairs": 20,
-    "Stairs-2nd Floor": 25,
-    "Reading Room-Bookshelf A": 8,
-    "Reading Room-Bookshelf B": 8,
-}
-
 # =============================================================================
-# 3. SAFETY FUNCTIONS
+# 3. CORE LOGIC (SAFE & DETERMINISTIC)
 # =============================================================================
 
 def find_shortest_path(graph, start, end):
     queue = [[start]]
     visited = set()
-    if start == end: return [start]
+
+    if start == end:
+        return [start]
+
     while queue:
         path = queue.pop(0)
         node = path[-1]
+
         if node not in visited:
-            neighbors = graph.get(node, [])
-            for neighbor in neighbors:
-                new_path = list(path)
-                new_path.append(neighbor)
-                if neighbor == end: return new_path
+            for neighbor in graph.get(node, {}):
+                new_path = path + [neighbor]
+                if neighbor == end:
+                    return new_path
                 queue.append(new_path)
             visited.add(node)
+
     return None
 
-def calculate_total_steps(path):
-    total = 0
-    if not path: return 0
+
+def generate_directions(path, graph):
+    steps = []
+
     for i in range(len(path) - 1):
-        key1 = f"{path[i]}-{path[i+1]}"
-        key2 = f"{path[i+1]}-{path[i]}"
-        total += step_distances.get(key1) or step_distances.get(key2) or 5
-    return total
+        curr = path[i]
+        nxt = path[i + 1]
+        edge = graph[curr][nxt]
+
+        direction = edge.get("direction", "").lower()
+        count = edge.get("steps", 5)  # default to 5 steps if missing
+
+        if direction in ["left", "right", "straight"]:
+            steps.append(f"Go {direction} for {count} steps to {nxt}")
+        elif direction == "upstairs":
+            steps.append(f"Go upstairs for {count} steps to {nxt}")
+        elif direction == "downstairs":
+            steps.append(f"Go downstairs for {count} steps to {nxt}")
+        elif direction in ["back", "backward"]:
+            steps.append(f"Turn back and walk {count} steps to {nxt}")
+        else:
+            steps.append(f"Proceed {count} steps to {nxt}")
+
+    return steps
+
+
+# =============================================================================
+# 4. OPENAI — HUMAN FRIENDLY CONTEXT-AWARE INSTRUCTIONS
+# =============================================================================
+
+def humanize_directions(directions, destination):
+    prompt = f"""
+You are an indoor navigation assistant.
+
+Context:
+- The user is visually impaired
+- The user is indoors
+- The user is walking while holding a phone
+- Instructions must be spoken aloud
+
+Rewrite the navigation steps below to be:
+- calm
+- reassuring
+- short spoken sentences
+- step-by-step
+- easy to follow without vision
+
+Rules:
+- Do NOT add or remove steps
+- Do NOT change directions or distances
+- Do NOT mention maps or screens
+- Avoid words like "see", "look", or "over there"
+
+Navigation steps:
+{directions}
+
+Destination: {destination}
+
+Return a single spoken paragraph.
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You generate safe spoken navigation instructions."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4
+        )
+
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        print("⚠️ OpenAI failed, using fallback:", e)
+        return ". ".join(directions)
+
+# =============================================================================
+# 5. AZURE TTS (NON-BLOCKING & SAFE)
+# =============================================================================
 
 def safe_azure_speak(text):
-    """
-    Runs Azure speech in a separate thread so it NEVER blocks or crashes the main server.
-    """
     def _speak():
         try:
-            print(f"   -> 🔊 Attempting Laptop Audio...")
-            speech_config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
-            speech_config.speech_synthesis_voice_name = 'en-US-AvaMultilingualNeural'
+            speech_config = speechsdk.SpeechConfig(
+                subscription=AZURE_SPEECH_KEY,
+                region=AZURE_SPEECH_REGION
+            )
+            speech_config.speech_synthesis_voice_name = "en-US-AvaMultilingualNeural"
+
             audio_config = speechsdk.audio.AudioOutputConfig(use_default_speaker=True)
-            synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
-            synthesizer.speak_text_async(text) # Fire and forget
+            synthesizer = speechsdk.SpeechSynthesizer(
+                speech_config=speech_config,
+                audio_config=audio_config
+            )
+            synthesizer.speak_text_async(text)
         except Exception as e:
-            print(f"   -> ⚠️ Laptop Audio Failed (Ignored): {e}")
+            print("⚠️ Azure TTS failed:", e)
 
-    # Launch in background thread
-    threading.Thread(target=_speak).start()
+    threading.Thread(target=_speak, daemon=True).start()
 
 # =============================================================================
-# 4. API ENDPOINT
+# 6. API ENDPOINT
 # =============================================================================
 
-@app.route('/navigate', methods=['POST'])
+@app.route("/navigate", methods=["POST"])
 def navigate():
-    # Wrap EVERYTHING in a massive try/catch to ensure JSON is always returned
     try:
         data = request.json
-        user_voice_text = (data.get('command') or data.get('voice_text') or data.get('text') or '').lower()
-        current_node = data.get('current_node', 'Entrance')
+        voice_text = (data.get("voice_text") or "").lower()
+        current_node = data.get("current_node", "Entrance")
 
-        print(f"\n🎧 Request: '{user_voice_text}' (At: {current_node})")
+        print(f"\n🎧 User said: '{voice_text}' | At: {current_node}")
 
-        # --- STEP 1: AI Decision ---
-        try:
-            map_nodes = list(maps_data["1"]["nodes"].keys())
-            prompt = f"Map nodes: {', '.join(map_nodes)}. User says: '{user_voice_text}'. Return ONLY the exact node name. If unknown, say UNKNOWN."
-            
-            gpt_res = client.chat.completions.create(
-                messages=[{"role": "system", "content": prompt}],
-                model="gpt-4o",
-                temperature=0
-            )
-            destination = gpt_res.choices[0].message.content.strip().replace(".", "")
-            print(f"📍 Target: {destination}")
-        except Exception as ai_error:
-            print(f"⚠️ AI Error: {ai_error}")
-            return jsonify({"status": "error", "message": "AI Busy", "speech": "AI is busy, try again.", "path": []})
+        map_graph = maps_data["1"]["nodes"]
+        map_nodes = list(map_graph.keys())
+
+        # --- Ask AI ONLY to identify destination ---
+        prompt = f"""
+Map locations: {", ".join(map_nodes)}
+
+User said: "{voice_text}"
+
+Return ONLY the exact location name.
+If unknown, return UNKNOWN.
+"""
+
+        ai_res = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "system", "content": prompt}],
+            temperature=0
+        )
+
+        destination = ai_res.choices[0].message.content.strip().replace(".", "")
+        print(f"📍 Destination resolved to: {destination}")
 
         if destination == "UNKNOWN" or destination not in map_nodes:
-            safe_azure_speak("I couldn't find that location.")
+            msg = "I couldn't find that location. Please try again."
+            safe_azure_speak(msg)
             return jsonify({
-                "status": "error", 
-                "message": "Location not found",
-                "speech": "I couldn't find that location.", 
+                "status": "error",
+                "speech": msg,
                 "path": []
             })
 
-        # --- STEP 2: Logic ---
-        path = find_shortest_path(maps_data["1"]["nodes"], current_node, destination)
-        total_steps = calculate_total_steps(path)
-        instruction = f"Proceed {total_steps} steps to {destination}."
-        print(f"🤖 Generated: {instruction}")
+        # --- Navigation logic ---
+        path = find_shortest_path(map_graph, current_node, destination)
+        raw_directions = generate_directions(path, map_graph)
+        speech_text = humanize_directions(raw_directions, destination)
 
-        # --- STEP 3: Speak (Safety Sandbox) ---
-        safe_azure_speak(instruction)
+        safe_azure_speak(speech_text)
 
-        # --- STEP 4: Send to Phone ---
         response = {
             "status": "success",
-            "speech": instruction,
+            "speech": speech_text,
+            "raw_directions": raw_directions,
             "path": path,
-            "destination": destination,
-            "steps": total_steps
+            "destination": destination
         }
-        
-        print(f"📤 Sending to App: {response}") 
+
+        print(f"📤 Response: {response}")
         return jsonify(response)
 
     except Exception as e:
-        print(f"❌ CRITICAL SERVER ERROR: {e}")
         traceback.print_exc()
-        # Even if the server explodes, return a polite JSON to the phone
         return jsonify({
-            "status": "error", 
-            "message": "Internal Logic Error",
-            "speech": "System error occurred.",
+            "status": "error",
+            "speech": "A system error occurred. Please try again.",
             "path": []
-        }), 200 # Return 200 OK so Volley doesn't treat it as a network failure
+        }), 200
 
-if __name__ == '__main__':
-    print("🚀 Server Ready - Listening on 5000...")
-    app.run(host='0.0.0.0', port=5000)
+# =============================================================================
+# 7. RUN SERVER
+# =============================================================================
+
+if __name__ == "__main__":
+    print("🚀 Indoor Navigation Server Running on Port 5000 updated")
+    app.run(host="0.0.0.0", port=5000)
