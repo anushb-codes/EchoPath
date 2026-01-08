@@ -11,7 +11,7 @@ import azure.cognitiveservices.speech as speechsdk
 app = Flask(__name__)
 
 # ❗ DO NOT HARDCODE KEYS IN REAL PROJECTS
-GITHUB_TOKEN = "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"
+GITHUB_TOKEN = "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"
 AZURE_SPEECH_KEY = "7OsxmGUDzWUN4S7bl0luHskbRSfm3O1VFZpQY2LRoqwtcinDODOGJQQJ99CAAC3pKaRXJ3w3AAAYACOGRSOV"
 AZURE_SPEECH_REGION = "eastasia"
 
@@ -227,7 +227,7 @@ If unknown, return UNKNOWN.
 
         if destination == "UNKNOWN" or destination not in nodes:
             msg = "I couldn't find that location. Please try again."
-            safe_azure_speak(msg)
+            # safe_azure_speak(msg)
             return jsonify({
                 "status": "error",
                 "speech": msg,
@@ -239,7 +239,7 @@ If unknown, return UNKNOWN.
         spoken_steps, steps_between_nodes, directions_between_nodes = generate_directions(path, graph)
         speech_text = humanize_directions(spoken_steps, destination)
 
-        safe_azure_speak(speech_text)
+        # safe_azure_speak(speech_text)
 
         response = {
             "status": "success",

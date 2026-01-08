@@ -6,7 +6,6 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Bundle;
-import android.speech.tts.TextToSpeech;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -17,6 +16,7 @@ import com.android.volley.Request;
 import com.android.volley.toolbox.JsonObjectRequest;
 import com.android.volley.toolbox.Volley;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+
 import com.microsoft.cognitiveservices.speech.*;
 import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
 
@@ -25,7 +25,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
@@ -38,13 +39,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private TextView txtInstruction;
     private FloatingActionButton btnMic;
 
-    // ================= TTS =================
-    private TextToSpeech tts;
-
     // ================= NAVIGATION =================
     private String currentNode = "Entrance";
     private final ArrayList<DirectionSegment> directionSegments = new ArrayList<>();
-
     private int pathIndex = 0;
     private int stepCount = 0;
     private int currentSegmentTargetSteps = 0;
@@ -56,9 +53,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private double magnitudePrevious = 0;
 
     //JSON Data
-    String destination;
+    private String destination;
 
-    // ================= LIFECYCLE =================
+    // ================= AZURE TTS =================
+    private SpeechSynthesizer synthesizer;
+    private final ExecutorService ttsExecutor = Executors.newSingleThreadExecutor();
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -70,11 +70,25 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 
-        tts = new TextToSpeech(this, status -> tts.setLanguage(Locale.US));
+        // Initialize Azure TTS synthesizer
+        initAzureTTS();
 
         btnMic.setOnClickListener(v -> {
             startAzureVoiceInput();
-            tts.speak("How may I help you?", TextToSpeech.QUEUE_FLUSH, null, null);
+            speakAzure("How may I help you?");
+        });
+    }
+
+    private void initAzureTTS() {
+        ttsExecutor.execute(() -> {
+            try {
+                SpeechConfig speechConfig = SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
+                speechConfig.setSpeechSynthesisVoiceName("en-US-AvaMultilingualNeural");
+                AudioConfig audioConfig = AudioConfig.fromDefaultSpeakerOutput();
+                synthesizer = new SpeechSynthesizer(speechConfig, audioConfig);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         });
     }
 
@@ -148,7 +162,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
 
             txtInstruction.setText(speech);
-            tts.speak(speech, TextToSpeech.QUEUE_FLUSH, null, null);
+            speakAzure(speech);
 
             if (!directionSegments.isEmpty()) {
                 startNavigation();
@@ -182,7 +196,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 + " for " + seg.steps + " steps towards " + directionSegments.get(pathIndex).to;
 
         txtInstruction.setText(instruction);
-        tts.speak(instruction, TextToSpeech.QUEUE_FLUSH, null, null);
+        speakAzure(instruction);
     }
 
     private String humanizeDirection(String dir) {
@@ -230,7 +244,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             String msg = "You have arrived at " + destination;
             txtInstruction.setText(msg);
-            tts.speak(msg, TextToSpeech.QUEUE_FLUSH, null, null);
+            speakAzure(msg);
             return;
         }
 
@@ -244,6 +258,19 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     protected void onPause() {
         super.onPause();
         sensorManager.unregisterListener(this);
+    }
+
+    // ================= AZURE TTS QUEUE =================
+    private void speakAzure(String text) {
+        ttsExecutor.execute(() -> {
+            try {
+                if (synthesizer != null) {
+                    synthesizer.SpeakTextAsync(text).get();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
     }
 
     // ================= MODEL =================
