@@ -1,63 +1,29 @@
 package com.example.indoornav;
 
-import android.content.Context;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.android.volley.DefaultRetryPolicy;
-import com.android.volley.Request;
-import com.android.volley.toolbox.JsonObjectRequest;
-import com.android.volley.toolbox.Volley;
-import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.android.volley.*;
+import com.android.volley.toolbox.*;
 
-import com.microsoft.cognitiveservices.speech.*;
-import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
-
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
+import org.json.*;
 
 import java.util.ArrayList;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
-public class MainActivity extends AppCompatActivity implements SensorEventListener {
+public class MainActivity extends AppCompatActivity {
 
-    // ================= CONFIG =================
     private static final String SERVER_URL = "http://10.0.2.2:5000/navigate";
-    private static final String AZURE_SPEECH_KEY = "7OsxmGUDzWUN4S7bl0luHskbRSfm3O1VFZpQY2LRoqwtcinDODOGJQQJ99CAAC3pKaRXJ3w3AAAYACOGRSOV";
-    private static final String AZURE_SPEECH_REGION = "eastasia";
+    private static final String AZURE_KEY = "7OsxmGUDzWUN4S7bl0luHskbRSfm3O1VFZpQY2LRoqwtcinDODOGJQQJ99CAAC3pKaRXJ3w3AAAYACOGRSOV";
+    private static final String AZURE_REGION = "eastasia";
 
-    // ================= UI =================
     private TextView txtInstruction;
-    private FloatingActionButton btnMic;
 
-    // ================= NAVIGATION =================
-    private String currentNode = "Entrance";
-    private final ArrayList<DirectionSegment> directionSegments = new ArrayList<>();
-    private int pathIndex = 0;
-    private int stepCount = 0;
-    private int currentSegmentTargetSteps = 0;
-    private boolean isNavigating = false;
-
-    // ================= SENSORS =================
-    private SensorManager sensorManager;
-    private Sensor accelerometer;
-    private double magnitudePrevious = 0;
-
-    //JSON Data
-    private String destination;
-
-    // ================= AZURE TTS =================
-    private SpeechSynthesizer synthesizer;
-    private final ExecutorService ttsExecutor = Executors.newSingleThreadExecutor();
+    private SpeechManager speechManager;
+    private NavigationManager navigationManager;
+    private CommandManager commandManager;
+    private CommandInterpreter interpreter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,224 +31,112 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         setContentView(R.layout.activity_main);
 
         txtInstruction = findViewById(R.id.txtInstruction);
-        btnMic = findViewById(R.id.btnMic);
 
-        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        speechManager = new SpeechManager(this, AZURE_KEY, AZURE_REGION);
+        navigationManager = new NavigationManager(this, txtInstruction, speechManager);
+        commandManager = new CommandManager(speechManager, navigationManager);
+        interpreter = new CommandInterpreter();
 
-        // Initialize Azure TTS synthesizer
-        initAzureTTS();
 
-        btnMic.setOnClickListener(v -> {
-            startAzureVoiceInput();
-            speakAzure("How may I help you?");
+        findViewById(R.id.btnMic).setOnClickListener(v -> {
+            speechManager.speak("How may I help you?");
+            txtInstruction.setText("...");
+//            handleVoiceInput("Take me to reading room");
+            speechManager.listenOnce(
+                    this::handleVoiceInput, // onSuccess
+                    () -> speechManager.speak("Can you speak again?") // onError
+            );
         });
     }
 
-    private void initAzureTTS() {
-        ttsExecutor.execute(() -> {
-            try {
-                SpeechConfig speechConfig = SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
-                speechConfig.setSpeechSynthesisVoiceName("en-US-AvaMultilingualNeural");
-                AudioConfig audioConfig = AudioConfig.fromDefaultSpeakerOutput();
-                synthesizer = new SpeechSynthesizer(speechConfig, audioConfig);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
-    }
+    // ================= COMMAND FLOW =================
 
-    // ================= AZURE STT =================
-    private void startAzureVoiceInput() {
-        txtInstruction.setText("Listening...");
+    private void handleVoiceInput(String text) {
+        // Use updated CommandInterpreter
+        CommandInterpreter.interpretCommand(text, type -> {
+            txtInstruction.setText(text);
+            runOnUiThread(() -> {
+                switch (type) {
 
-        new Thread(() -> {
-            try {
-                SpeechConfig config = SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
-                config.setSpeechRecognitionLanguage("en-US");
+                    case NAVIGATE:
+                        extractDestination(text);
+                        break;
 
-                SpeechRecognizer recognizer =
-                        new SpeechRecognizer(config, AudioConfig.fromDefaultMicrophoneInput());
+                    case REPEAT:
+                        commandManager.repeat(navigationManager.getLastInsruction());
+                        break;
 
-                SpeechRecognitionResult result = recognizer.recognizeOnceAsync().get();
-                recognizer.close();
+                    case CANCEL:
+                        commandManager.cancel();
+                        break;
 
-                if (result.getReason() == ResultReason.RecognizedSpeech) {
-                    runOnUiThread(() -> sendToServer(result.getText()));
-                } else {
-                    runOnUiThread(() -> txtInstruction.setText("Could not understand"));
+//                    case STATUS:
+//                        String status = navigationManager.getProgressSummary();
+//                        speechManager.speak(status);
+//                        break;
+
+                    default:
+                        speechManager.speak("Sorry, I did not understand that");
                 }
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }).start();
+            });
+        });
     }
 
-    // ================= SERVER =================
-    private void sendToServer(String voiceText) {
-        txtInstruction.setText("Calculating route...");
+    private void extractDestination(String text) {
+        CommandInterpreter.extractDestinationFromText(text, destination -> {
+            if (destination == null) {
+                speechManager.speak("Please tell me the destination.");
+                return;
+            }
+
+            sendNavigationRequest(destination);
+        });
+    }
+
+
+
+    // ================= BACKEND =================
+
+    private void sendNavigationRequest(String destination) {
 
         JSONObject body = new JSONObject();
         try {
-            body.put("voice_text", voiceText);
-            body.put("current_node", currentNode);
+            body.put("current_node", navigationManager.getCurrentNode());
+            body.put("destination", destination);
         } catch (JSONException ignored) {}
 
-        JsonObjectRequest request = new JsonObjectRequest(
+        JsonObjectRequest req = new JsonObjectRequest(
                 Request.Method.POST, SERVER_URL, body,
-                this::handleServerResponse,
-                error -> txtInstruction.setText("Server error")
+                this::handleNavigationResponse,
+                e -> speechManager.speak("Server error")
         );
 
-        request.setRetryPolicy(new DefaultRetryPolicy(30000, 1, 1));
-        Volley.newRequestQueue(this).add(request);
+        Volley.newRequestQueue(this).add(req);
     }
 
-    private void handleServerResponse(JSONObject response) {
+    private void handleNavigationResponse(JSONObject response) {
         try {
             String speech = response.getString("speech");
+            String destination = response.getString("destination");
+            JSONArray path = response.getJSONArray("path");
+            JSONArray steps = response.getJSONArray("steps_between_nodes");
+            JSONArray dirs = response.getJSONArray("directions_between_nodes");
 
-            directionSegments.clear();
+            ArrayList<NavigationManager.DirectionSegment> segments = new ArrayList<>();
 
-            JSONArray pathArray = response.getJSONArray("path");
-            JSONArray stepsArray = response.getJSONArray("steps_between_nodes");
-            JSONArray dirsArray = response.getJSONArray("directions_between_nodes");
-            destination = response.getString("destination");
-
-            for (int i = 0; i < stepsArray.length(); i++) {
-                String from = pathArray.getString(i);
-                String to = pathArray.getString(i + 1);
-                int steps = stepsArray.getInt(i);
-                String dir = dirsArray.getString(i);
-
-                directionSegments.add(
-                        new DirectionSegment(from, to, dir, steps)
-                );
+            for (int i = 0; i < steps.length(); i++) {
+                segments.add(new NavigationManager.DirectionSegment(
+                        path.getString(i),
+                        path.getString(i + 1),
+                        dirs.getString(i),
+                        steps.getInt(i)
+                ));
             }
 
-            txtInstruction.setText(speech);
-            speakAzure(speech);
+            commandManager.executeNavigation(segments, destination);
 
-            if (!directionSegments.isEmpty()) {
-                startNavigation();
-            }
-
-        } catch (JSONException e) {
-            e.printStackTrace();
-            txtInstruction.setText("Error parsing navigation data");
-        }
-    }
-
-    // ================= NAVIGATION =================
-    private void startNavigation() {
-        isNavigating = true;
-        pathIndex = 0;
-        stepCount = 0;
-
-        loadCurrentSegment();
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
-
-        Toast.makeText(this, "Start walking", Toast.LENGTH_SHORT).show();
-    }
-
-    private void loadCurrentSegment() {
-        if (pathIndex >= directionSegments.size()) return;
-
-        DirectionSegment seg = directionSegments.get(pathIndex);
-        currentSegmentTargetSteps = seg.steps;
-
-        String instruction = "Walk " + humanizeDirection(seg.direction)
-                + " for " + seg.steps + " steps towards " + directionSegments.get(pathIndex).to;
-
-        txtInstruction.setText(instruction);
-        speakAzure(instruction);
-    }
-
-    private String humanizeDirection(String dir) {
-        switch (dir) {
-            case "left": return "to your left";
-            case "right": return "to your right";
-            case "straight": return "straight ahead";
-            case "back": return "backwards";
-            case "upstairs": return "up the stairs";
-            case "downstairs": return "down the stairs";
-            default: return "forward";
-        }
-    }
-
-    // ================= SENSOR =================
-    @Override
-    public void onSensorChanged(SensorEvent event) {
-        if (!isNavigating) return;
-
-        double mag = Math.sqrt(
-                event.values[0]*event.values[0] +
-                        event.values[1]*event.values[1] +
-                        event.values[2]*event.values[2]);
-
-        double delta = mag - magnitudePrevious;
-        magnitudePrevious = mag;
-
-        if (delta > 2) {
-            stepCount++;
-            txtInstruction.setText("Steps: " + stepCount + " / " + currentSegmentTargetSteps);
-
-            if (stepCount >= currentSegmentTargetSteps) {
-                advanceSegment();
-            }
-        }
-    }
-
-    private void advanceSegment() {
-        stepCount = 0;
-        pathIndex++;
-
-        if (pathIndex >= directionSegments.size()) {
-            isNavigating = false;
-            sensorManager.unregisterListener(this);
-
-            String msg = "You have arrived at " + destination;
-            txtInstruction.setText(msg);
-            speakAzure(msg);
-            return;
-        }
-
-        currentNode = directionSegments.get(pathIndex).from;
-        loadCurrentSegment();
-    }
-
-    @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        sensorManager.unregisterListener(this);
-    }
-
-    // ================= AZURE TTS QUEUE =================
-    private void speakAzure(String text) {
-        ttsExecutor.execute(() -> {
-            try {
-                if (synthesizer != null) {
-                    synthesizer.SpeakTextAsync(text).get();
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
-    }
-
-    // ================= MODEL =================
-    static class DirectionSegment {
-        public String from, to, direction;
-        int steps;
-
-        DirectionSegment(String f, String t, String d, int s) {
-            from = f;
-            to = t;
-            direction = d;
-            steps = s;
+        } catch (Exception e) {
+            speechManager.speak("Error processing navigation");
         }
     }
 }
