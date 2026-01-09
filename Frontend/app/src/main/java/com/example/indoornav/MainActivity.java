@@ -1,6 +1,7 @@
 package com.example.indoornav;
 
 import android.os.Bundle;
+import android.view.SoundEffectConstants;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -24,6 +25,7 @@ public class MainActivity extends AppCompatActivity {
     private NavigationManager navigationManager;
     private CommandManager commandManager;
     private CommandInterpreter interpreter;
+    private boolean micUsed = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -36,12 +38,11 @@ public class MainActivity extends AppCompatActivity {
         navigationManager = new NavigationManager(this, txtInstruction, speechManager);
         commandManager = new CommandManager(speechManager, navigationManager);
         interpreter = new CommandInterpreter();
-
+        speechManager.speak("Tap the screen and speak your command.");
 
         findViewById(R.id.btnMic).setOnClickListener(v -> {
-            speechManager.speak("How may I help you?");
+            v.playSoundEffect(SoundEffectConstants.CLICK);
             txtInstruction.setText("...");
-//            handleVoiceInput("Take me to reading room");
             speechManager.listenOnce(
                     this::handleVoiceInput, // onSuccess
                     () -> speechManager.speak("Can you speak again?") // onError
@@ -63,17 +64,23 @@ public class MainActivity extends AppCompatActivity {
                         break;
 
                     case REPEAT:
-                        commandManager.repeat(navigationManager.getLastInsruction());
+                        commandManager.repeat(navigationManager.getLastInstruction());
                         break;
 
                     case CANCEL:
                         commandManager.cancel();
                         break;
 
-//                    case STATUS:
-//                        String status = navigationManager.getProgressSummary();
-//                        speechManager.speak(status);
-//                        break;
+                    case STATUS:
+                        navigationManager.getProgressSummary(summary -> {
+                            txtInstruction.setText(summary);
+                            speechManager.speak(summary);
+                        });
+                        break;
+
+                    case HELP:
+                        commandManager.help();
+                        break;
 
                     default:
                         speechManager.speak("Sorry, I did not understand that");

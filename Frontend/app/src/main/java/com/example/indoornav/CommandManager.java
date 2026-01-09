@@ -22,6 +22,10 @@ public class CommandManager {
         navigationManager.start();
     }
 
+    public void help(){
+        speechManager.speak("Tap on the screen, then speak your command to start. Example \"I want to go to the reception\"");
+    }
+
     public void cancel() {
         navigationManager.stop();
         speechManager.speak("Navigation cancelled");

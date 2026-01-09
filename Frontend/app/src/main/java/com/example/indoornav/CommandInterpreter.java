@@ -19,7 +19,7 @@ import java.util.Scanner;
 public class CommandInterpreter {
 
     // ⚠️ Use secure storage in real apps
-    private static final String OPENAI_API_KEY = "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";
+    private static final String OPENAI_API_KEY = "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";
     private static final String OPENAI_URL = "https://models.github.ai/inference/v1/chat/completions";
 
     // ================= COMMAND TYPE =================
@@ -28,6 +28,7 @@ public class CommandInterpreter {
         REPEAT,
         CANCEL,
         STATUS,
+        HELP,
         UNKNOWN
     }
 
@@ -48,14 +49,15 @@ public class CommandInterpreter {
             try {
                 String prompt = "You are a command classifier for a voice-based indoor navigation app.\n" +
                         "Classify the user's command into exactly ONE of the following words:\n" +
-                        "NAVIGATE, REPEAT, CANCEL, STATUS, UNKNOWN\n" +
+                        "NAVIGATE, HELP, REPEAT, CANCEL, STATUS, UNKNOWN, HELP\n" +
                         "Rules:\n" +
                         "- NAVIGATE: user wants to go somewhere\n" +
+                        "- HELP: user wants help with using the app\n" +
                         "- REPEAT: user asks to repeat instructions\n" +
                         "- CANCEL: user wants to stop navigation\n" +
-                        "- STATUS: user asks progress, location, or distance\n" +
+                        "- STATUS: user asks progress, summary, location, or distance\n" +
                         "- UNKNOWN: none of the above\n" +
-                        "Return ONLY one word, exactly one of: NAVIGATE, REPEAT, CANCEL, STATUS, UNKNOWN.\n" +
+                        "Return ONLY one word, exactly one of: NAVIGATE, HELP, REPEAT, CANCEL, STATUS, UNKNOWN.\n" +
                         "User command:\n" + userText;
 
                 JSONObject requestBody = new JSONObject()
@@ -96,6 +98,7 @@ public class CommandInterpreter {
                     else if (r.contains("REPEAT")) type = CommandType.REPEAT;
                     else if (r.contains("CANCEL")) type = CommandType.CANCEL;
                     else if (r.contains("STATUS")) type = CommandType.STATUS;
+                    else if (r.contains("HELP")) type = CommandType.HELP;
                     else type = CommandType.UNKNOWN;
                 }
 
