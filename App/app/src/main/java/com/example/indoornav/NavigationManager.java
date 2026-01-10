@@ -21,16 +21,17 @@ import java.util.Scanner;
 public class NavigationManager implements SensorEventListener {
 
     // ===== OpenAI CONFIG =====
-    private static final String OPENAI_API_KEY = "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";
-    private static final String OPENAI_URL = "https://models.github.ai/inference/v1/chat/completions";
+    private static final String OPENAI_API_KEY = "YOUR_KEY";
+    private static final String OPENAI_URL = "https://api.openai.com/v1/chat/completions"; //Alternate URL: https://models.github.ai/inference/v1/chat/completions
 
-    // ===== SENSORS & UI =====
+
+    //Sensors
     private final SensorManager sensorManager;
     private final Sensor accelerometer;
     private final SpeechManager speechManager;
     private final TextView txtInstruction;
 
-    // ===== NAVIGATION DATA =====
+    //Navigation Data
     private final ArrayList<DirectionSegment> segments = new ArrayList<>();
 
     private int pathIndex = 0;
@@ -44,12 +45,10 @@ public class NavigationManager implements SensorEventListener {
     private String currentNode = "Entrance";
     private String lastInstruction = "No instruction to repeat.";
 
-    // ===== CALLBACK =====
     public interface ProgressCallback {
         void onResult(String summary);
     }
 
-    // ===== CONSTRUCTOR =====
     public NavigationManager(Context ctx, TextView txt, SpeechManager sm) {
         txtInstruction = txt;
         speechManager = sm;
@@ -58,7 +57,6 @@ public class NavigationManager implements SensorEventListener {
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
     }
 
-    // ===== GETTERS =====
     public String getCurrentNode() {
         return currentNode;
     }
@@ -67,7 +65,6 @@ public class NavigationManager implements SensorEventListener {
         return lastInstruction;
     }
 
-    // ===== LOAD ROUTE =====
     public void loadRoute(ArrayList<DirectionSegment> route, String dest) {
         segments.clear();
         segments.addAll(route);
@@ -75,7 +72,6 @@ public class NavigationManager implements SensorEventListener {
         stepsWalkedCount = 0;
     }
 
-    // ===== START NAVIGATION =====
     public void start() {
         if (segments.isEmpty()) return;
 
@@ -87,7 +83,6 @@ public class NavigationManager implements SensorEventListener {
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
     }
 
-    // ===== LOAD CURRENT SEGMENT =====
     private void loadSegment() {
         DirectionSegment seg = segments.get(pathIndex);
         currentSegmentTargetSteps = seg.steps;
@@ -100,7 +95,6 @@ public class NavigationManager implements SensorEventListener {
         speechManager.speak(msg);
     }
 
-    // ===== DIRECTION TO SPEECH =====
     private String humanize(String dir) {
         switch (dir) {
             case "left": return "to your left";
@@ -113,7 +107,6 @@ public class NavigationManager implements SensorEventListener {
         }
     }
 
-    // ===== STEP DETECTION =====
     @Override
     public void onSensorChanged(SensorEvent event) {
         if (!isNavigating) return;
@@ -141,7 +134,6 @@ public class NavigationManager implements SensorEventListener {
         }
     }
 
-    // ===== MOVE TO NEXT SEGMENT =====
     private void advance() {
         stepCount = 0;
         pathIndex++;
@@ -164,21 +156,16 @@ public class NavigationManager implements SensorEventListener {
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
-    // ===== STOP NAVIGATION =====
     public void stop() {
         isNavigating = false;
         sensorManager.unregisterListener(this);
     }
 
-    // ======================================================
-    // ========== AI POWERED PROGRESS SUMMARY =================
-    // ======================================================
     public void getProgressSummary(ProgressCallback callback) {
         new Thread(() -> {
             String summary = "You are making good progress.";
 
             try {
-//                summary = "hello";
                 DirectionSegment seg = segments.get(pathIndex);
 
                 int totalSteps = 0;
@@ -196,14 +183,14 @@ public class NavigationManager implements SensorEventListener {
                         "You are an indoor navigation assistant.\n" +
                                 "The user is visually impaired.\n" +
                                 "Be calm, and concise.\n\n" +
+                                "Data: \n" +
                                 atCurrentLocation + seg.from + "\n" +
                                 "Next location: " + seg.to + "\n" +
                                 "Destination: " + destination + "\n" +
                                 "Steps walked: " + stepCount + "\n" +
                                 "Steps remaining: " + remainingSteps + "\n\n" +
-                                "Generate a spoken progress update.";
+                                "Generate a spoken progress update with all data.";
 
-                // ---- OpenAI request (same as CommandInterpreter) ----
                 JSONObject requestBody = new JSONObject()
                         .put("model", "gpt-4o-mini")
                         .put("temperature", 0.4)
@@ -252,7 +239,6 @@ public class NavigationManager implements SensorEventListener {
         new Handler(Looper.getMainLooper()).post(() -> cb.onResult(text));
     }
 
-    // ===== MODEL =====
     public static class DirectionSegment {
         public String from, to, direction;
         public int steps;

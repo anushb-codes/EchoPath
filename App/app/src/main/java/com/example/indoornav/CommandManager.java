@@ -1,7 +1,5 @@
 package com.example.indoornav;
 
-import android.content.Context;
-
 import java.util.ArrayList;
 
 public class CommandManager {

@@ -11,18 +11,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Scanner;
 
-/**
- * CommandInterpreter handles:
- * 1️⃣ Classifying user commands into NAVIGATE, REPEAT, CANCEL, STATUS, UNKNOWN
- * 2️⃣ Extracting the destination from user commands (if any)
- */
 public class CommandInterpreter {
+    private static final String OPENAI_API_KEY = "YOUR_KEY";
+    private static final String OPENAI_URL = "https://api.openai.com/v1/chat/completions"; //Alternate URL: https://models.github.ai/inference/v1/chat/completions
 
-    // ⚠️ Use secure storage in real apps
-    private static final String OPENAI_API_KEY = "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";
-    private static final String OPENAI_URL = "https://models.github.ai/inference/v1/chat/completions";
-
-    // ================= COMMAND TYPE =================
     public enum CommandType {
         NAVIGATE,
         REPEAT,
@@ -32,7 +24,6 @@ public class CommandInterpreter {
         UNKNOWN
     }
 
-    // ================= CALLBACKS =================
     public interface Callback {
         void onResult(CommandType type);
     }
@@ -41,7 +32,6 @@ public class CommandInterpreter {
         void onResult(String destination);
     }
 
-    // ================= INTERPRET COMMAND =================
     public static void interpretCommand(final String userText, final Callback callback) {
         new Thread(() -> {
             CommandType type = CommandType.UNKNOWN;
@@ -111,7 +101,6 @@ public class CommandInterpreter {
         }).start();
     }
 
-    // ================= EXTRACT DESTINATION =================
     public static void extractDestinationFromText(final String userText, final DestinationCallback callback) {
         new Thread(() -> {
             String destination = null;

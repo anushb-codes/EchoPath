@@ -19,34 +19,6 @@
         android:layout_marginTop="40dp"
         android:layout_marginBottom="10dp"/>
 
-<!--    <Button-->
-<!--        android:id="@+id/btnMap1"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="60dp"-->
-<!--        android:text="Map 1: Library"-->
-<!--        android:textSize="18sp"-->
-<!--        android:backgroundTint="#2196F3"/>-->
-
-<!--    <Button-->
-<!--        android:id="@+id/btnMap2"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="60dp"-->
-<!--        android:text="Map 2: Computer Dept"-->
-<!--        android:textSize="18sp"-->
-<!--        android:backgroundTint="#2196F3"-->
-<!--        android:layout_marginTop="15dp"/>-->
-
-<!--    <Button-->
-<!--        android:id="@+id/btnMap3"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="60dp"-->
-<!--        android:text="Map 3: Canteen"-->
-<!--        android:textSize="18sp"-->
-<!--        android:backgroundTint="#2196F3"-->
-<!--        android:layout_marginTop="15dp"/>-->
-
-<!--    <View android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>-->
-
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnMic"
         android:layout_width="323dp"

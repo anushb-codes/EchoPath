@@ -1,15 +1,7 @@
 import traceback
 from flask import Flask, request, jsonify
 
-# =============================================================================
-# 1. APP SETUP
-# =============================================================================
-
 app = Flask(__name__)
-
-# =============================================================================
-# 2. MAP WITH EDGE-BASED DIRECTIONS
-# =============================================================================
 
 maps_data = {
     "1": {
@@ -48,10 +40,6 @@ maps_data = {
     }
 }
 
-# =============================================================================
-# 3. PATHFINDING (BFS)
-# =============================================================================
-
 def find_shortest_path(graph, start, end):
     if start == end:
         return [start]
@@ -73,10 +61,6 @@ def find_shortest_path(graph, start, end):
 
     return []
 
-# =============================================================================
-# 4. DIRECTIONS + STEPS EXTRACTION
-# =============================================================================
-
 def generate_directions(path, graph):
     steps_between_nodes = []
     directions_between_nodes = []
@@ -93,10 +77,6 @@ def generate_directions(path, graph):
         directions_between_nodes.append(direction)
 
     return steps_between_nodes, directions_between_nodes
-
-# =============================================================================
-# 5. API ENDPOINT
-# =============================================================================
 
 @app.route("/navigate", methods=["POST"])
 def navigate():
@@ -121,7 +101,6 @@ def navigate():
         path = find_shortest_path(graph, current_node, destination)
         steps_between_nodes, directions_between_nodes = generate_directions(path, graph)
 
-        # Generate a simple speech-friendly message (Android app can replace with TTS)
         speech_text = f"Walk through the following nodes: {', '.join(path)}."
 
         response = {
@@ -143,10 +122,7 @@ def navigate():
             "path": []
         }), 500
 
-# =============================================================================
-# 6. RUN SERVER
-# =============================================================================
 
 if __name__ == "__main__":
-    print("🚀 Indoor Navigation Server running on port 5000")
+    print("EchoPath Server running on port 5000")
     app.run(host="0.0.0.0", port=5000)

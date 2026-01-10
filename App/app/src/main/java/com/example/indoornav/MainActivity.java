@@ -16,16 +16,14 @@ import java.util.ArrayList;
 public class MainActivity extends AppCompatActivity {
 
     private static final String SERVER_URL = "http://10.0.2.2:5000/navigate";
-    private static final String AZURE_KEY = "7OsxmGUDzWUN4S7bl0luHskbRSfm3O1VFZpQY2LRoqwtcinDODOGJQQJ99CAAC3pKaRXJ3w3AAAYACOGRSOV";
-    private static final String AZURE_REGION = "eastasia";
+    private static final String AZURE_KEY = "YOUR_KEY";
+    private static final String AZURE_REGION = "YOUR_REGION";
 
     private TextView txtInstruction;
 
     private SpeechManager speechManager;
     private NavigationManager navigationManager;
     private CommandManager commandManager;
-    private CommandInterpreter interpreter;
-    private boolean micUsed = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,7 +35,6 @@ public class MainActivity extends AppCompatActivity {
         speechManager = new SpeechManager(this, AZURE_KEY, AZURE_REGION);
         navigationManager = new NavigationManager(this, txtInstruction, speechManager);
         commandManager = new CommandManager(speechManager, navigationManager);
-        interpreter = new CommandInterpreter();
         speechManager.speak("Tap the screen and speak your command.");
 
         findViewById(R.id.btnMic).setOnClickListener(v -> {
@@ -50,10 +47,8 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // ================= COMMAND FLOW =================
-
+    //Command Flow
     private void handleVoiceInput(String text) {
-        // Use updated CommandInterpreter
         CommandInterpreter.interpretCommand(text, type -> {
             txtInstruction.setText(text);
             runOnUiThread(() -> {
@@ -100,10 +95,7 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-
-
-    // ================= BACKEND =================
-
+    //Request to Backend server
     private void sendNavigationRequest(String destination) {
 
         JSONObject body = new JSONObject();
