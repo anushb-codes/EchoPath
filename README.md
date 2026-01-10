@@ -1,4 +1,4 @@
-# EchoPath
+# EchoPath: Indoor Navigation Assistant for the visually impaired
 
 ## Overview
 
@@ -96,7 +96,7 @@ EchoPath/
 #### Steps
 
 ```bash
-cd Backend
+cd EchoPath/Backend
 python -m venv venv
 source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install flask
