@@ -2,7 +2,7 @@
 
 ## Overview
 
-EchoPath is a voice‑guided indoor navigation system designed to assist users—especially visually impaired individuals—in navigating complex indoor spaces such as libraries, academic buildings, and offices. The app listens to spoken commands, understands user intent using AI, calculates routes, and provides step‑by‑step audio instructions with real‑time progress updates.
+EchoPath is a voice‑guided indoor navigation system designed to assist users especially visually impaired individuals in navigating complex indoor spaces such as libraries, academic buildings, and offices. The app listens to spoken commands, understands user intent using AI, calculates routes, and provides step‑by‑step audio instructions with real‑time progress updates.
 
 The goal of EchoPath is to make indoor spaces more accessible by removing the dependency on visual maps or constant human assistance.
 
