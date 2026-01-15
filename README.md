@@ -164,4 +164,4 @@ This project is developed for academic and educational purposes.
 
 ---
 
-**EchoPath — Guiding the visually impaired, step by step.**
+**EchoPath - Guiding the visually impaired, step by step.**
