@@ -1,4 +1,4 @@
-# EchoPath: Indoor Navigation Assistant for the visually impaired
+# EchoPath: Indoor Navigation Assistant for the Visually Impaired
 
 ## Overview
 
